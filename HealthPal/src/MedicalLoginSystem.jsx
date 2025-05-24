@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-// Import the CSS file: import './MedicalSystem.css';
+import React, { useState, useEffect } from 'react';
 
 const MedicalLoginSystem = () => {
-  const [currentView, setCurrentView] = useState('login'); // 'login', 'register', 'dashboard'
-  const [doctors, setDoctors] = useState([]); // Store registered doctors
-  const [patients, setPatients] = useState([]); // Store registered patients
+  const [currentView, setCurrentView] = useState('login');
   const [currentDoctor, setCurrentDoctor] = useState(null);
-
+  const [patients, setPatients] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [medications, setMedications] = useState([]);
+  const [token, setToken] = useState(localStorage.getItem('token') || '');
+  
   // Login form state
   const [loginForm, setLoginForm] = useState({
     email: '',
@@ -15,7 +16,7 @@ const MedicalLoginSystem = () => {
 
   // Registration form state
   const [registerForm, setRegisterForm] = useState({
-    fullName: '',
+    name: '',
     email: '',
     password: '',
     confirmPassword: ''
@@ -23,16 +24,52 @@ const MedicalLoginSystem = () => {
 
   // Patient registration form state
   const [patientForm, setPatientForm] = useState({
-    patientName: '',
-    nextAppointment: '',
+    name: '',
+    age: '',
+    phone: '',
+    preferred_reminder_method: 'SMS',
+    appointmentDate: '',
+    appointmentTime: '',
     medicationName: '',
     dosage: '',
-    instructions: ''
+    instructions: '',
+    scheduleTime: ''
   });
 
   const [errors, setErrors] = useState({});
 
-  // Validation functions
+  useEffect(() => {
+    if (currentView === 'dashboard' && token) {
+      fetchData();
+    }
+  }, [currentView, token]);
+
+  const fetchData = async () => {
+    try {
+      const [patientsRes, appointmentsRes, medicationsRes] = await Promise.all([
+        fetch('/api/patients', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch('/api/appointments', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch('/api/medications', {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+
+      const patientsData = await patientsRes.json();
+      const appointmentsData = await appointmentsRes.json();
+      const medicationsData = await medicationsRes.json();
+
+      setPatients(patientsData.patients);
+      setAppointments(appointmentsData.appointments);
+      setMedications(medicationsData.medications);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
@@ -40,126 +77,165 @@ const MedicalLoginSystem = () => {
 
   const validateRegistration = () => {
     const newErrors = {};
-    
-    if (!registerForm.fullName.trim()) {
-      newErrors.fullName = 'Full name is required';
-    }
-    
+    if (!registerForm.name.trim()) newErrors.name = 'Full name is required';
     if (!registerForm.email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!validateEmail(registerForm.email)) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = 'Invalid email address';
     }
-    
-    if (!registerForm.password) {
-      newErrors.password = 'Password is required';
-    } else if (registerForm.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-    
-    if (registerForm.password !== registerForm.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-    }
-    
+    if (registerForm.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+    if (registerForm.password !== registerForm.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const validateLogin = () => {
     const newErrors = {};
-    
-    if (!loginForm.email.trim()) {
-      newErrors.email = 'Email is required';
-    }
-    
-    if (!loginForm.password) {
-      newErrors.password = 'Password is required';
-    }
-    
+    if (!loginForm.email.trim()) newErrors.email = 'Email is required';
+    if (!loginForm.password) newErrors.password = 'Password is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const validatePatientForm = () => {
     const newErrors = {};
-    
-    if (!patientForm.patientName.trim()) {
-      newErrors.patientName = 'Patient name is required';
-    }
-    
-    if (!patientForm.nextAppointment) {
-      newErrors.nextAppointment = 'Next appointment date is required';
-    }
-    
-    if (!patientForm.medicationName.trim()) {
-      newErrors.medicationName = 'Medication name is required';
-    }
-    
-    if (!patientForm.dosage.trim()) {
-      newErrors.dosage = 'Dosage is required';
-    }
-    
-    if (!patientForm.instructions.trim()) {
-      newErrors.instructions = 'Instructions are required';
-    }
-    
+    if (!patientForm.name.trim()) newErrors.name = 'Patient name is required';
+    if (!patientForm.age) newErrors.age = 'Age is required';
+    if (isNaN(patientForm.age)) newErrors.age = 'Age must be a number';
+    if (!patientForm.phone.trim()) newErrors.phone = 'Phone is required';
+    if (!patientForm.appointmentDate) newErrors.appointmentDate = 'Appointment date is required';
+    if (!patientForm.appointmentTime) newErrors.appointmentTime = 'Appointment time is required';
+    if (!patientForm.medicationName.trim()) newErrors.medicationName = 'Medication name is required';
+    if (!patientForm.dosage.trim()) newErrors.dosage = 'Dosage is required';
+    if (!patientForm.scheduleTime) newErrors.scheduleTime = 'Schedule time is required';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Handle form submissions
-  const handleRegister = () => {
-    if (validateRegistration()) {
-      const newDoctor = {
-        id: Date.now(),
-        fullName: registerForm.fullName,
-        email: registerForm.email,
-        password: registerForm.password
-      };
-      setDoctors([...doctors, newDoctor]);
-      setRegisterForm({ fullName: '', email: '', password: '', confirmPassword: '' });
+  const handleRegister = async () => {
+    if (!validateRegistration()) return;
+
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: registerForm.name,
+          email: registerForm.email,
+          password: registerForm.password
+        })
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Registration failed');
+
       setCurrentView('login');
       alert('Registration successful! Please log in.');
+    } catch (error) {
+      setErrors({ register: error.message });
     }
   };
 
-  const handleLogin = () => {
-    if (validateLogin()) {
-      const doctor = doctors.find(d => 
-        d.email === loginForm.email && d.password === loginForm.password
-      );
-      if (doctor) {
-        setCurrentDoctor(doctor);
-        setCurrentView('dashboard');
-        setLoginForm({ email: '', password: '' });
-      } else {
-        setErrors({ login: 'Invalid email or password' });
-      }
+  const handleLogin = async () => {
+    if (!validateLogin()) return;
+
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginForm)
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Login failed');
+
+      localStorage.setItem('token', data.token);
+      setToken(data.token);
+      setCurrentDoctor(data.doctor);
+      setCurrentView('dashboard');
+    } catch (error) {
+      setErrors({ login: error.message });
     }
   };
 
-  const handlePatientRegistration = () => {
-    if (validatePatientForm()) {
-      const newPatient = {
-        id: Date.now(),
-        doctorId: currentDoctor.id,
-        ...patientForm,
-        registeredAt: new Date().toLocaleDateString()
-      };
-      setPatients([...patients, newPatient]);
+  const handlePatientRegistration = async () => {
+    if (!validatePatientForm()) return;
+
+    try {
+      // Create patient
+      const patientRes = await fetch('/api/patients', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: patientForm.name,
+          age: patientForm.age,
+          phone: patientForm.phone,
+          preferred_reminder_method: patientForm.preferred_reminder_method
+        })
+      });
+      const patientData = await patientRes.json();
+      if (!patientRes.ok) throw new Error(patientData.message);
+
+      // Create appointment
+      await fetch('/api/appointments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          patient_id: patientData.patient.id,
+          date: patientForm.appointmentDate,
+          time: patientForm.appointmentTime,
+          notes: patientForm.instructions
+        })
+      });
+
+      // Create medication
+      await fetch('/api/medications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          patient_id: patientData.patient.id,
+          name: patientForm.medicationName,
+          dosage: patientForm.dosage,
+          instructions: patientForm.instructions,
+          schedule_time: patientForm.scheduleTime
+        })
+      });
+
       setPatientForm({
-        patientName: '',
-        nextAppointment: '',
+        name: '',
+        age: '',
+        phone: '',
+        preferred_reminder_method: 'SMS',
+        appointmentDate: '',
+        appointmentTime: '',
         medicationName: '',
         dosage: '',
-        instructions: ''
+        instructions: '',
+        scheduleTime: ''
       });
+      
+      fetchData();
       alert('Patient registered successfully!');
+    } catch (error) {
+      setErrors({ patient: error.message });
     }
   };
 
-  // Get current doctor's patients
-  const currentDoctorPatients = patients.filter(p => p.doctorId === currentDoctor?.id);
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setToken('');
+    setCurrentDoctor(null);
+    setCurrentView('login');
+  };
 
   return (
     <div className="app-container">
@@ -173,52 +249,38 @@ const MedicalLoginSystem = () => {
 
             <div className="space-y-6">
               <div className="form-group">
-                <label htmlFor="email" className="form-label">
-                  Email Address
-                </label>
+                <label>Email Address</label>
                 <input
                   type="email"
-                  id="email"
                   value={loginForm.email}
                   onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
-                  className="form-input"
                   placeholder="doctor@example.com"
                 />
-                {errors.email && <p className="error-message">{errors.email}</p>}
+                {errors.email && <p className="error">{errors.email}</p>}
               </div>
 
               <div className="form-group">
-                <label htmlFor="password" className="form-label">
-                  Password
-                </label>
+                <label>Password</label>
                 <input
                   type="password"
-                  id="password"
                   value={loginForm.password}
                   onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
-                  className="form-input"
                   placeholder="••••••••"
                 />
-                {errors.password && <p className="error-message">{errors.password}</p>}
+                {errors.password && <p className="error">{errors.password}</p>}
               </div>
 
-              {errors.login && <p className="error-message">{errors.login}</p>}
+              {errors.login && <p className="error">{errors.login}</p>}
 
-              <button
-                onClick={handleLogin}
-                className="btn btn-primary"
-              >
+              <button onClick={handleLogin} className="btn primary">
                 Sign In
               </button>
             </div>
 
-            <div className="auth-footer">
+            <div className="footer">
               <p>
                 Don't have an account?{' '}
-                <button
-                  onClick={() => setCurrentView('register')}
-                  className="link link-burgundy"
-                >
+                <button onClick={() => setCurrentView('register')}>
                   Register here
                 </button>
               </p>
@@ -235,80 +297,59 @@ const MedicalLoginSystem = () => {
 
             <div className="space-y-6">
               <div className="form-group">
-                <label htmlFor="fullName" className="form-label">
-                  Full Name
-                </label>
+                <label>Full Name</label>
                 <input
-                  type="text"
-                  id="fullName"
-                  value={registerForm.fullName}
-                  onChange={(e) => setRegisterForm({...registerForm, fullName: e.target.value})}
-                  className="form-input"
+                  value={registerForm.name}
+                  onChange={(e) => setRegisterForm({...registerForm, name: e.target.value})}
                   placeholder="Dr. John Smith"
                 />
-                {errors.fullName && <p className="error-message">{errors.fullName}</p>}
+                {errors.name && <p className="error">{errors.name}</p>}
               </div>
 
               <div className="form-group">
-                <label htmlFor="regEmail" className="form-label">
-                  Email Address
-                </label>
+                <label>Email Address</label>
                 <input
                   type="email"
-                  id="regEmail"
                   value={registerForm.email}
                   onChange={(e) => setRegisterForm({...registerForm, email: e.target.value})}
-                  className="form-input"
                   placeholder="doctor@example.com"
                 />
-                {errors.email && <p className="error-message">{errors.email}</p>}
+                {errors.email && <p className="error">{errors.email}</p>}
               </div>
 
               <div className="form-group">
-                <label htmlFor="regPassword" className="form-label">
-                  Password
-                </label>
+                <label>Password</label>
                 <input
                   type="password"
-                  id="regPassword"
                   value={registerForm.password}
                   onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
-                  className="form-input"
                   placeholder="••••••••"
                 />
-                {errors.password && <p className="error-message">{errors.password}</p>}
+                {errors.password && <p className="error">{errors.password}</p>}
               </div>
 
               <div className="form-group">
-                <label htmlFor="confirmPassword" className="form-label">
-                  Confirm Password
-                </label>
+                <label>Confirm Password</label>
                 <input
                   type="password"
-                  id="confirmPassword"
                   value={registerForm.confirmPassword}
                   onChange={(e) => setRegisterForm({...registerForm, confirmPassword: e.target.value})}
-                  className="form-input"
                   placeholder="••••••••"
                 />
-                {errors.confirmPassword && <p className="error-message">{errors.confirmPassword}</p>}
+                {errors.confirmPassword && <p className="error">{errors.confirmPassword}</p>}
               </div>
 
-              <button
-                onClick={handleRegister}
-                className="btn btn-secondary"
-              >
+              {errors.register && <p className="error">{errors.register}</p>}
+
+              <button onClick={handleRegister} className="btn secondary">
                 Register
               </button>
             </div>
 
-            <div className="auth-footer">
+            <div className="footer">
               <p>
                 Already have an account?{' '}
-                <button
-                  onClick={() => setCurrentView('login')}
-                  className="link link-teal"
-                >
+                <button onClick={() => setCurrentView('login')}>
                   Sign in here
                 </button>
               </p>
@@ -318,143 +359,163 @@ const MedicalLoginSystem = () => {
 
         {currentView === 'dashboard' && (
           <div className="dashboard-container">
-            {/* Welcome Header */}
             <div className="card">
               <div className="dashboard-header">
                 <div>
-                  <h1>Welcome, {currentDoctor.fullName}</h1>
-                  <p>Patient Registration Dashboard</p>
+                  <h1>Welcome, {currentDoctor?.name}</h1>
+                  <p>Patient Management Dashboard</p>
                 </div>
-                <button
-                  onClick={() => {
-                    setCurrentDoctor(null);
-                    setCurrentView('login');
-                  }}
-                  className="btn btn-gray btn-small"
-                >
+                <button onClick={handleLogout} className="btn gray">
                   Logout
                 </button>
               </div>
             </div>
 
-            {/* Patient Registration Form */}
             <div className="card">
-              <h2 className="section-title">Register New Patient</h2>
-              
+              <h2>Register New Patient</h2>
               <div className="space-y-6">
                 <div className="form-group">
-                  <label htmlFor="patientName" className="form-label">
-                    Patient Name
-                  </label>
+                  <label>Patient Name</label>
                   <input
-                    type="text"
-                    id="patientName"
-                    value={patientForm.patientName}
-                    onChange={(e) => setPatientForm({...patientForm, patientName: e.target.value})}
-                    className="form-input"
-                    placeholder="Jane Doe"
+                    value={patientForm.name}
+                    onChange={(e) => setPatientForm({...patientForm, name: e.target.value})}
                   />
-                  {errors.patientName && <p className="error-message">{errors.patientName}</p>}
+                  {errors.name && <p className="error">{errors.name}</p>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="nextAppointment" className="form-label">
-                    Next Appointment Date
-                  </label>
+                  <label>Age</label>
+                  <input
+                    type="number"
+                    value={patientForm.age}
+                    onChange={(e) => setPatientForm({...patientForm, age: e.target.value})}
+                  />
+                  {errors.age && <p className="error">{errors.age}</p>}
+                </div>
+
+                <div className="form-group">
+                  <label>Phone</label>
+                  <input
+                    value={patientForm.phone}
+                    onChange={(e) => setPatientForm({...patientForm, phone: e.target.value})}
+                  />
+                  {errors.phone && <p className="error">{errors.phone}</p>}
+                </div>
+
+                <div className="form-group">
+                  <label>Reminder Method</label>
+                  <select
+                    value={patientForm.preferred_reminder_method}
+                    onChange={(e) => setPatientForm({...patientForm, preferred_reminder_method: e.target.value})}
+                  >
+                    <option value="SMS">SMS</option>
+                    <option value="WhatsApp">WhatsApp</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Appointment Date</label>
                   <input
                     type="date"
-                    id="nextAppointment"
-                    value={patientForm.nextAppointment}
-                    onChange={(e) => setPatientForm({...patientForm, nextAppointment: e.target.value})}
-                    className="form-input"
+                    value={patientForm.appointmentDate}
+                    onChange={(e) => setPatientForm({...patientForm, appointmentDate: e.target.value})}
                   />
-                  {errors.nextAppointment && <p className="error-message">{errors.nextAppointment}</p>}
+                  {errors.appointmentDate && <p className="error">{errors.appointmentDate}</p>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="medicationName" className="form-label">
-                    Medication Name
-                  </label>
+                  <label>Appointment Time</label>
                   <input
-                    type="text"
-                    id="medicationName"
+                    type="time"
+                    value={patientForm.appointmentTime}
+                    onChange={(e) => setPatientForm({...patientForm, appointmentTime: e.target.value})}
+                  />
+                  {errors.appointmentTime && <p className="error">{errors.appointmentTime}</p>}
+                </div>
+
+                <div className="form-group">
+                  <label>Medication Name</label>
+                  <input
                     value={patientForm.medicationName}
                     onChange={(e) => setPatientForm({...patientForm, medicationName: e.target.value})}
-                    className="form-input"
-                    placeholder="Amoxicillin"
                   />
-                  {errors.medicationName && <p className="error-message">{errors.medicationName}</p>}
+                  {errors.medicationName && <p className="error">{errors.medicationName}</p>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="dosage" className="form-label">
-                    Dosage
-                  </label>
+                  <label>Dosage</label>
                   <input
-                    type="text"
-                    id="dosage"
                     value={patientForm.dosage}
                     onChange={(e) => setPatientForm({...patientForm, dosage: e.target.value})}
-                    className="form-input"
-                    placeholder="500mg"
                   />
-                  {errors.dosage && <p className="error-message">{errors.dosage}</p>}
+                  {errors.dosage && <p className="error">{errors.dosage}</p>}
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="instructions" className="form-label">
-                    Instructions
-                  </label>
-                  <textarea
-                    id="instructions"
-                    value={patientForm.instructions}
-                    onChange={(e) => setPatientForm({...patientForm, instructions: e.target.value})}
-                    className="form-textarea"
-                    placeholder="Take twice daily after meals"
+                  <label>Schedule Time</label>
+                  <input
+                    type="time"
+                    value={patientForm.scheduleTime}
+                    onChange={(e) => setPatientForm({...patientForm, scheduleTime: e.target.value})}
                   />
-                  {errors.instructions && <p className="error-message">{errors.instructions}</p>}
+                  {errors.scheduleTime && <p className="error">{errors.scheduleTime}</p>}
                 </div>
 
-                <button
-                  onClick={handlePatientRegistration}
-                  className="btn btn-primary"
-                >
+                <div className="form-group">
+                  <label>Instructions</label>
+                  <textarea
+                    value={patientForm.instructions}
+                    onChange={(e) => setPatientForm({...patientForm, instructions: e.target.value})}
+                  />
+                </div>
+
+                {errors.patient && <p className="error">{errors.patient}</p>}
+
+                <button onClick={handlePatientRegistration} className="btn primary">
                   Register Patient
                 </button>
               </div>
             </div>
 
-            {/* Patient List */}
-            {currentDoctorPatients.length > 0 && (
-              <div className="card">
-                <h2 className="section-title">Your Patients ({currentDoctorPatients.length})</h2>
-                <div className="patient-list">
-                  {currentDoctorPatients.map((patient) => (
+            <div className="card">
+              <h2>Patients ({patients.length})</h2>
+              <div className="patient-list">
+                {patients.map(patient => {
+                  const patientAppointments = appointments.filter(a => a.patient_id === patient.id);
+                  const patientMedications = medications.filter(m => m.patient_id === patient.id);
+
+                  return (
                     <div key={patient.id} className="patient-card">
-                      <div className="patient-header">
-                        <div className="flex-1">
-                          <h3 className="patient-name">{patient.patientName}</h3>
-                          <p className="patient-appointment">
-                            Next Appointment: {new Date(patient.nextAppointment).toLocaleDateString()}
-                          </p>
-                          <div className="patient-details mt-2">
-                            <p>
-                              <span className="detail-label">Medication:</span> {patient.medicationName} - {patient.dosage}
-                            </p>
-                            <p>
-                              <span className="detail-label">Instructions:</span> {patient.instructions}
-                            </p>
+                      <h3>{patient.name}</h3>
+                      <p>Phone: {patient.phone}</p>
+                      <p>Age: {patient.age}</p>
+                      <p>Reminder Method: {patient.preferred_reminder_method}</p>
+
+                      <div className="appointments">
+                        <h4>Appointments:</h4>
+                        {patientAppointments.map(appointment => (
+                          <div key={appointment.id}>
+                            <p>Date: {appointment.date} {appointment.time}</p>
+                            <p>Notes: {appointment.notes}</p>
                           </div>
-                        </div>
-                        <span className="patient-badge">
-                          Registered: {patient.registeredAt}
-                        </span>
+                        ))}
+                      </div>
+
+                      <div className="medications">
+                        <h4>Medications:</h4>
+                        {patientMedications.map(medication => (
+                          <div key={medication.id}>
+                            <p>{medication.name} - {medication.dosage}</p>
+                            <p>Time: {medication.schedule_time}</p>
+                            <p>Instructions: {medication.instructions}</p>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>
